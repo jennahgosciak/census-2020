@@ -1,0 +1,154 @@
+---
+title: "00_census_2020_exploratory"
+output: html_notebook
+---
+
+From [NYC Planning](https://www1.nyc.gov/site/planning/planning-level/nyc-population/2020-census.page): 
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(jsonlite)
+library(magrittr)
+library(sf)
+library(tigris)
+library(censusapi)
+
+readRenviron("~/.Renviron")
+
+get_decennial(
+  geography = "tract",
+  state = "NY",
+  variables = "P1_001N",
+  year = 2020,
+  geometry = T
+)
+
+#load_variables(2020, "pl")
+
+varlist <- fromJSON("https://api.census.gov/data/2020/dec/pl/variables.json", simplifyDataFrame = T) %>% 
+  extract2("variables") %>% 
+  as.data.frame() %>% 
+  mutate_all(~as.character(.)) %>% 
+  pivot_longer(everything(), names_sep = "\\.",
+               names_to = c("varname", "type"))
+```
+## Load census data
+```{r}
+ny_t_2020 <- st_read(dsn = "C:/Users/jg6849/Documents/Github/census-2020/data/tl_2020_36_tract/tl_2020_36_tract.shp") %>% 
+  filter(COUNTYFP %in% c("005", "047", "061", "081", "085"))
+ny_t_2020 
+
+ny_t_2010 <- st_read(dsn = "C:/Users/jg6849/Documents/Github/census-2020/data/tl_2010_36_tract10/tl_2010_36_tract10.shp") %>% 
+  filter(COUNTYFP10 %in% c("005", "047", "061", "081", "085")) %>% 
+  rename(GEOID = GEOID10)
+ny_t_2010
+```
+
+```{r}
+#ny_t_2020 <- tracts("NY", county = c("New York", "Kings", "Queens", "Richmond", "Bronx"),
+#                year = 2020)
+# 
+# ny_t_2010 <- tracts("NY", county = c("New York", "Kings", "Queens", "Richmond", "Bronx"),
+#                year = 2010)
+# ny_t_2020
+# ny_t_2010
+```
+```{r, geom ops, message = F, warning = F}
+ny_t_2020_filt <- ny_t_2020 %>%
+  filter(AWATER < ALAND)
+
+ny_t_2010_filt <- ny_t_2010 %>%
+  filter(AWATER10 < ALAND10)
+
+tract_intersection <- function(gdf1, gdf2, id) {
+  gdf1 %>%
+    filter(GEOID == id) %>%
+    st_intersection(filter(gdf2, GEOID == id))
+}
+
+tract_difference <- function(gdf1, gdf2, id) {
+  gdf1 %>%
+    filter(GEOID == id) %>%
+    st_difference(filter(gdf2, GEOID == id))
+}
+
+ny_t_int <- map_dfr(unique(ny_t_2020_filt$"GEOID"), ~tract_intersection(ny_t_2020_filt, ny_t_2010_filt, .))
+ny_t_int
+
+ny_t_diff_2020 <- map_dfr(unique(ny_t_2020_filt$"GEOID"), ~tract_difference(ny_t_2020_filt, ny_t_2010_filt, .))
+ny_t_diff_2020
+
+ny_t_diff_2010 <- map_dfr(unique(ny_t_2010_filt$"GEOID"), ~tract_difference(ny_t_2010_filt, ny_t_2020_filt, .))
+ny_t_diff_2010
+
+stopifnot(st_crs(ny_t_2020_filt) == st_crs(ny_t_2020_filt))
+```
+
+# Intersection of census tracts between 2020 and 2010
+```{r, intersects, fig.width = 10, fig.height = 10}
+ggplot(data = ny_t_int) +
+  geom_sf(fill = "gray", lwd = 0.5) +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(), 
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+```
+
+# Difference in census tracts between 2020 and 2010
+```{r, difference, fig.width = 10, fig.height = 10}
+ggplot() +
+  geom_sf(data = ny_t_diff_2020, fill = "blue", color = "blue", alpha = 0.5) +
+  geom_sf(data = ny_t_diff_2010, fill = "green", color = "green", alpha = 0.5) +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(), 
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+```
+```{r}
+ny_t_diff_comp <- ny_t_diff_2020 %>% 
+  mutate(area_2020diff = st_area(geometry)) %>% 
+  as.data.frame() %>% 
+  select(c("GEOID", "area_2020diff")) %>% 
+  full_join(ny_t_diff_2010 %>% 
+              mutate(area_2010diff = st_area(geometry)) %>% 
+              as.data.frame() %>% 
+              select(c("GEOID", "area_2010diff")), by = "GEOID") %>% 
+  right_join(ny_t_2020_filt, by = "GEOID") %>% 
+  mutate(area_2020_total = st_area(geometry),
+         area_ratio = as.numeric(rowSums(select(., c("area_2020diff", "area_2010diff")), na.rm = T) / area_2020_total)) %>% 
+  arrange(desc(area_ratio)) %>% 
+  select("area_ratio", everything())  %>% 
+  st_as_sf()
+
+ny_t_diff_comp
+```
+
+# Scored difference
+```{r, scored diff, fig.width = 10, fig.height = 10}
+ggplot() +
+  geom_sf(data = ny_t_diff_comp, aes(fill = area_ratio)) +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(), 
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  scale_fill_continuous(high = "#132B43", low = "#56B1F7")
+```
+
+
+
+
