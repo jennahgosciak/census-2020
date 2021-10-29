@@ -1,6 +1,8 @@
 ---
 title: "00_census_2020_exploratory"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 From [NYC Planning](https://www1.nyc.gov/site/planning/planning-level/nyc-population/2020-census.page): 
@@ -12,16 +14,24 @@ library(magrittr)
 library(sf)
 library(tigris)
 library(censusapi)
+library(leaflet)
+library(mapview)
+library(fs)
+library(openxlsx)
 
+# load common code
+source("99_common.R")
+root <- "C:/Users/jg6849/Documents/Github/census-2020"
+inp <- path(root, "1_input")
+
+# Furman specific colors
+colors <- c("#40899A", "#8DB7C5", "#984415")
+color_scale <- c("#09335A",	"#40899A",	"#4AA397",	"#5FB572",	"#71BD69",	"#96C475",	"#D3CF8C",	"#D9C199")
+big_color_scale <- c("#09335A",	"#12625A",	"#40899A",	"#4AA397", "#99C168",	"#BFC871",	"#CEBA7B", "#D3CF8C",	"#D9C199")
+```
+
+```{r, include = F}
 readRenviron("~/.Renviron")
-
-get_decennial(
-  geography = "tract",
-  state = "NY",
-  variables = "P1_001N",
-  year = 2020,
-  geometry = T
-)
 
 #load_variables(2020, "pl")
 
@@ -30,10 +40,15 @@ varlist <- fromJSON("https://api.census.gov/data/2020/dec/pl/variables.json", si
   as.data.frame() %>% 
   mutate_all(~as.character(.)) %>% 
   pivot_longer(everything(), names_sep = "\\.",
-               names_to = c("varname", "type"))
+               names_to = c("varname", "type")) %>% 
+  pivot_wider(id_cols = "varname", names_from = "type", values_from = "value")
+
+varlist %>% 
+  filter(varname == "P1_001N")
 ```
+# Geographic comparison
 ## Load census data
-```{r}
+```{r, include = F}
 ny_t_2020 <- st_read(dsn = "C:/Users/jg6849/Documents/Github/census-2020/data/tl_2020_36_tract/tl_2020_36_tract.shp") %>% 
   filter(COUNTYFP %in% c("005", "047", "061", "081", "085"))
 ny_t_2020 
@@ -42,16 +57,6 @@ ny_t_2010 <- st_read(dsn = "C:/Users/jg6849/Documents/Github/census-2020/data/tl
   filter(COUNTYFP10 %in% c("005", "047", "061", "081", "085")) %>% 
   rename(GEOID = GEOID10)
 ny_t_2010
-```
-
-```{r}
-#ny_t_2020 <- tracts("NY", county = c("New York", "Kings", "Queens", "Richmond", "Bronx"),
-#                year = 2020)
-# 
-# ny_t_2010 <- tracts("NY", county = c("New York", "Kings", "Queens", "Richmond", "Bronx"),
-#                year = 2010)
-# ny_t_2020
-# ny_t_2010
 ```
 ```{r, geom ops, message = F, warning = F}
 ny_t_2020_filt <- ny_t_2020 %>%
@@ -99,7 +104,7 @@ ggplot(data = ny_t_int) +
   )
 ```
 
-# Difference in census tracts between 2020 and 2010
+# Geographic difference in census tracts between 2020 and 2010
 ```{r, difference, fig.width = 10, fig.height = 10}
 ggplot() +
   geom_sf(data = ny_t_diff_2020, fill = "blue", color = "blue", alpha = 0.5) +
@@ -114,6 +119,7 @@ ggplot() +
     axis.title.y = element_blank()
   )
 ```
+
 ```{r}
 ny_t_diff_comp <- ny_t_diff_2020 %>% 
   mutate(area_2020diff = st_area(geometry)) %>% 
@@ -123,14 +129,19 @@ ny_t_diff_comp <- ny_t_diff_2020 %>%
               mutate(area_2010diff = st_area(geometry)) %>% 
               as.data.frame() %>% 
               select(c("GEOID", "area_2010diff")), by = "GEOID") %>% 
-  right_join(ny_t_2020_filt, by = "GEOID") %>% 
-  mutate(area_2020_total = st_area(geometry),
-         area_ratio = as.numeric(rowSums(select(., c("area_2020diff", "area_2010diff")), na.rm = T) / area_2020_total)) %>% 
+  left_join(ny_t_2020_filt, ., by = "GEOID") %>% 
+  mutate(area_2020_total = as.numeric(st_area(geometry))) %>% 
+  group_by(GEOID) %>% 
+  mutate(area_ratio = as.numeric((area_2010diff + area_2020diff) / area_2020_total)) %>% 
   arrange(desc(area_ratio)) %>% 
-  select("area_ratio", everything())  %>% 
-  st_as_sf()
+  select("area_ratio", everything()) %>% 
+  ungroup() %>% 
+  mutate(area_ratio = case_when(is.na(area_ratio) ~ 0,
+                                TRUE ~ area_ratio))
 
 ny_t_diff_comp
+
+stopifnot(eeptools::isid(ny_t_diff_comp, "GEOID"))
 ```
 
 # Scored difference
@@ -148,6 +159,100 @@ ggplot() +
   ) +
   scale_fill_continuous(high = "#132B43", low = "#56B1F7")
 ```
+```{r}
+
+ny_t_diff_comp <- ny_t_diff_comp %>% 
+  filter(!is.na(area_ratio)) %>% 
+  st_transform(crs = st_crs(4326)) %>% 
+  filter(area_ratio > 0)
+
+pal_rev <- colorNumeric(colorRamp(c("#40899A", "#FFFFFF"), 
+                              interpolate="spline"), 
+                    domain = ny_t_diff_comp$area_ratio)
+
+pal <- colorNumeric(colorRamp(c("#40899A", "#FFFFFF"), 
+                              interpolate="spline"), 
+                    domain = ny_t_diff_comp$area_ratio, reverse = T)
+pal
+
+leaflet(data = ny_t_diff_comp) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(data = ny_t_2010_filt,
+              color = "black", stroke = T, weight = 0.2,
+              fill = T, fillColor = "grey",
+              group = "Census Tracts 2010") %>% 
+  addPolygons(color = "gray", stroke = T,weight = 0.2,
+              fill = T, fillColor = ~pal(area_ratio), fillOpacity = 1,
+              group = "Census Tracts 2020") %>% 
+  addLegend(position = "topright",
+            pal = pal_rev,
+            values = ~area_ratio,
+            title = "Area ratio",
+            labFormat = labelFormat(transform = function(area_ratio) 
+              sort(area_ratio, decreasing = TRUE))) %>% 
+  addLayersControl(overlayGroups = c("Census Tracts 2010", "Census Tracts 2020"))
+```
+
+# Population Comparison
+```{r}
+race_vars10 <- readxl::read_excel(path(inp, "race_vars_2010.xlsx"))
+race_vars10
+
+race_vars20 <- readxl::read_excel(path(inp, "race_vars_2020.xlsx"))
+race_vars20
+
+popdata_20 <- get_decennial(
+  geography = "tract",
+  state = "NY",
+  variables = race_vars20$name,
+  year = 2020,
+  geometry = F
+)  %>% 
+  pivot_wider(id_cols = c("GEOID", "NAME"), names_from = "variable", values_from = "value")  %>% 
+  rename_at(race_vars20$name, ~race_vars20$newname) 
+popdata_20
+
+popdata_10 <- get_decennial(
+  geography = "tract",
+  state = "NY",
+  variables = race_vars10$name,
+  year = 2010,
+  geometry = F
+) %>% 
+  pivot_wider(id_cols = c("GEOID", "NAME"), names_from = variable, values_from = value) %>% 
+  rename_at(race_vars10$name, ~race_vars10$newname)
+popdata_10
+
+racedata_sf <- full_join(popdata_20, select(popdata_10, -"NAME"), by = "GEOID", suffix = c("20", "10")) %>% 
+  ## inner join to spatial files from 2020
+  inner_join(select(ny_t_2020, -"NAME"), ., by = "GEOID") 
+racedata_sf
+```
+
+```{r, fig.width= 6, fig.height = 7}
+racedata_sf %>%
+  ggplot() +
+  geom_sf(aes(fill = total20), color = NA) +
+  theme_fc_map() +
+  scale_fill_gradient(
+    name = "Population in 2020",
+    low = "#F4F4F4", high = "#40899A",
+    # here we use guide_colourbar because it is still a continuous scale
+    guide = guide_colorbar(
+      direction = "horizontal",
+      barheight = unit(2, units = "mm"),
+      barwidth = unit(50, units = "mm"),
+      draw.ulim = F,
+      title.position = "top",
+      # some shifting around
+      title.hjust = 0.5,
+      label.hjust = 0.5
+    )
+  ) +
+  theme(legend.position = "bottom",
+        text = element_text(color = "#22211d"))
+```
+
 
 
 
