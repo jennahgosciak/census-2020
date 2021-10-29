@@ -6,7 +6,7 @@ output:
 ---
 
 From [NYC Planning](https://www1.nyc.gov/site/planning/planning-level/nyc-population/2020-census.page): 
-```{r}
+```{r, include = F}
 library(tidyverse)
 library(tidycensus)
 library(jsonlite)
@@ -28,23 +28,9 @@ inp <- path(root, "1_input")
 colors <- c("#40899A", "#8DB7C5", "#984415")
 color_scale <- c("#09335A",	"#40899A",	"#4AA397",	"#5FB572",	"#71BD69",	"#96C475",	"#D3CF8C",	"#D9C199")
 big_color_scale <- c("#09335A",	"#12625A",	"#40899A",	"#4AA397", "#99C168",	"#BFC871",	"#CEBA7B", "#D3CF8C",	"#D9C199")
-```
 
-```{r, include = F}
 readRenviron("~/.Renviron")
 
-#load_variables(2020, "pl")
-
-varlist <- fromJSON("https://api.census.gov/data/2020/dec/pl/variables.json", simplifyDataFrame = T) %>% 
-  extract2("variables") %>% 
-  as.data.frame() %>% 
-  mutate_all(~as.character(.)) %>% 
-  pivot_longer(everything(), names_sep = "\\.",
-               names_to = c("varname", "type")) %>% 
-  pivot_wider(id_cols = "varname", names_from = "type", values_from = "value")
-
-varlist %>% 
-  filter(varname == "P1_001N")
 ```
 # Geographic comparison
 ## Load census data
@@ -90,7 +76,7 @@ stopifnot(st_crs(ny_t_2020_filt) == st_crs(ny_t_2020_filt))
 ```
 
 # Intersection of census tracts between 2020 and 2010
-```{r, intersects, fig.width = 10, fig.height = 10}
+```{r, intersects, fig.width = 10, fig.height = 10, echo = F}
 ggplot(data = ny_t_int) +
   geom_sf(fill = "gray", lwd = 0.5) +
   theme_classic() +
@@ -105,7 +91,7 @@ ggplot(data = ny_t_int) +
 ```
 
 # Geographic difference in census tracts between 2020 and 2010
-```{r, difference, fig.width = 10, fig.height = 10}
+```{r, difference, fig.width = 10, fig.height = 10, echo = F}
 ggplot() +
   geom_sf(data = ny_t_diff_2020, fill = "blue", color = "blue", alpha = 0.5) +
   geom_sf(data = ny_t_diff_2010, fill = "green", color = "green", alpha = 0.5) +
@@ -120,7 +106,7 @@ ggplot() +
   )
 ```
 
-```{r}
+```{r, include = F}
 ny_t_diff_comp <- ny_t_diff_2020 %>% 
   mutate(area_2020diff = st_area(geometry)) %>% 
   as.data.frame() %>% 
@@ -145,7 +131,7 @@ stopifnot(eeptools::isid(ny_t_diff_comp, "GEOID"))
 ```
 
 # Scored difference
-```{r, scored diff, fig.width = 10, fig.height = 10}
+```{r, scored diff, fig.width = 10, fig.height = 10, echo = F}
 ggplot() +
   geom_sf(data = ny_t_diff_comp, aes(fill = area_ratio)) +
   theme_classic() +
@@ -159,8 +145,7 @@ ggplot() +
   ) +
   scale_fill_continuous(high = "#132B43", low = "#56B1F7")
 ```
-```{r}
-
+```{r, include = F}
 ny_t_diff_comp <- ny_t_diff_comp %>% 
   filter(!is.na(area_ratio)) %>% 
   st_transform(crs = st_crs(4326)) %>% 
@@ -174,7 +159,8 @@ pal <- colorNumeric(colorRamp(c("#40899A", "#FFFFFF"),
                               interpolate="spline"), 
                     domain = ny_t_diff_comp$area_ratio, reverse = T)
 pal
-
+```
+```{r}
 leaflet(data = ny_t_diff_comp) %>% 
   addProviderTiles(providers$CartoDB.Positron) %>% 
   addPolygons(data = ny_t_2010_filt,
@@ -194,7 +180,7 @@ leaflet(data = ny_t_diff_comp) %>%
 ```
 
 # Population Comparison
-```{r}
+```{r, include = F}
 race_vars10 <- readxl::read_excel(path(inp, "race_vars_2010.xlsx"))
 race_vars10
 
