@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /pdfs
 /txts
 
@@ -36,6 +37,8 @@ $RECYCLE.BIN/
 
 ## R ----
 
+=======
+>>>>>>> 6a8093f46e18f4d2aee391add39396a4d586b6b0
 # History files
 .Rhistory
 .Rapp.history
@@ -43,6 +46,12 @@ $RECYCLE.BIN/
 # Session Data files
 .RData
 
+<<<<<<< HEAD
+=======
+# User-specific files
+.Ruserdata
+
+>>>>>>> 6a8093f46e18f4d2aee391add39396a4d586b6b0
 # Example code in package build process
 *-Ex.R
 
@@ -63,9 +72,20 @@ vignettes/*.pdf
 .httr-oauth
 
 # knitr and R markdown default cache directories
+<<<<<<< HEAD
 /*_cache/
+=======
+*_cache/
+>>>>>>> 6a8093f46e18f4d2aee391add39396a4d586b6b0
 /cache/
 
 # Temporary files created by R markdown
 *.utf8.md
+<<<<<<< HEAD
 *.knit.md
+=======
+*.knit.md
+
+# R Environment Variables
+.Renviron
+>>>>>>> 6a8093f46e18f4d2aee391add39396a4d586b6b0
