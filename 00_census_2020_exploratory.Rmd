@@ -46,10 +46,10 @@ ny_t_2010
 ```
 ```{r, geom ops, message = F, warning = F}
 ny_t_2020_filt <- ny_t_2020 %>%
-  filter(AWATER < ALAND)
+  filter(AWATER < (0.8*ALAND))
 
 ny_t_2010_filt <- ny_t_2010 %>%
-  filter(AWATER10 < ALAND10)
+  filter(AWATER10 < (0.8*ALAND10))
 
 tract_intersection <- function(gdf1, gdf2, id) {
   gdf1 %>%
@@ -74,22 +74,6 @@ ny_t_diff_2010
 
 stopifnot(st_crs(ny_t_2020_filt) == st_crs(ny_t_2020_filt))
 ```
-
-# Intersection of census tracts between 2020 and 2010
-```{r, intersects, fig.width = 10, fig.height = 10, echo = F}
-ggplot(data = ny_t_int) +
-  geom_sf(fill = "gray", lwd = 0.5) +
-  theme_classic() +
-  theme(
-    axis.line = element_blank(),
-    axis.text.x = element_blank(),
-    axis.text.y = element_blank(), 
-    axis.ticks = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
-  )
-```
-
 # Geographic difference in census tracts between 2020 and 2010
 ```{r, difference, fig.width = 10, fig.height = 10, echo = F}
 ggplot() +
@@ -131,19 +115,24 @@ stopifnot(eeptools::isid(ny_t_diff_comp, "GEOID"))
 ```
 
 # Scored difference
-```{r, scored diff, fig.width = 10, fig.height = 10, echo = F}
-ggplot() +
-  geom_sf(data = ny_t_diff_comp, aes(fill = area_ratio)) +
-  theme_classic() +
-  theme(
-    axis.line = element_blank(),
-    axis.text.x = element_blank(),
-    axis.text.y = element_blank(), 
-    axis.ticks = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
-  ) +
-  scale_fill_continuous(high = "#132B43", low = "#56B1F7")
+```{r, scored diff, fig.width = 10, fig.height = 12, echo = F}
+ny_t_diff_comp %>% 
+  filter(area_ratio > 0) %>% 
+  ggplot() +
+    geom_sf(aes(fill = area_ratio), color = NA) +
+    theme_classic() +
+    theme(
+      axis.line = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(), 
+      axis.ticks = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "bottom",
+    ) +
+    guides(fill = guide_colorbar(title.position = "top", barwidth = 11, ticks = F)) +
+    scale_fill_continuous(name = "Difference in 2020 and 2010 areas \n divided by 2020 area",
+                        high = "#40899A", low = "#F5FCFF")
 ```
 ```{r, include = F}
 ny_t_diff_comp <- ny_t_diff_comp %>% 
@@ -160,7 +149,7 @@ pal <- colorNumeric(colorRamp(c("#40899A", "#FFFFFF"),
                     domain = ny_t_diff_comp$area_ratio, reverse = T)
 pal
 ```
-```{r}
+```{r, fig.width = 10}
 leaflet(data = ny_t_diff_comp) %>% 
   addProviderTiles(providers$CartoDB.Positron) %>% 
   addPolygons(data = ny_t_2010_filt,
